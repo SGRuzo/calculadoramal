@@ -1,8 +1,7 @@
 import javax.swing.*;
 import java.awt.*;
-import java.awt.event.ActionEvent;
-import java.awt.event.ActionListener;
 import java.awt.geom.RoundRectangle2D;
+import java.util.function.Consumer;
 
 public class View extends JFrame {
 
@@ -11,6 +10,8 @@ public class View extends JFrame {
     // Diámetro fijo para los botones redondos
     private static final int DIAMETRO_BOTON = 70;
 
+    // Listener para que el Controller capture el texto del botón pulsado
+    private Consumer<String> listenerBotones;
 
     public View() {
         setTitle("Calculadora");
@@ -66,7 +67,7 @@ public class View extends JFrame {
         restricciones.weighty = 1;
 
         // La posición inicial de la columna para la fila de botones
-        int currentColumn = 0;
+        int currentColumn;
 
         // Crear y agregar botones al panel
         for (int fila = 0; fila < textosBotones.length; fila++) {
@@ -110,45 +111,27 @@ public class View extends JFrame {
                 // Actualizar la posición de la columna para el siguiente botón.
                 currentColumn += restricciones.gridwidth;
 
-                // Acción del botón
-                boton.addActionListener(new ActionListener() {
-                    @Override
-                    public void actionPerformed(ActionEvent e) {
-                        alPresionarBoton(textoBoton);
+                // Acción del botón: notificar al listener externo (Controller)
+                boton.addActionListener(e -> {
+                    if (listenerBotones != null) {
+                        listenerBotones.accept(textoBoton);
                     }
                 });
             }
         }
     }
-// Modificación del método dentro de tu clase View:
 
-    private void alPresionarBoton(String textoBoton) {
-        if (textoBoton.equals("C")) {
-            pantalla.setText("0"); // Reiniciar pantalla
-        } else if (textoBoton.matches("[0-9.]")) {
-            // Manejar punto decimal solo si no existe ya
-            if (textoBoton.equals(".")) {
-                if (!pantalla.getText().contains(".")) {
-                    pantalla.setText(pantalla.getText() + textoBoton);
-                }
-            }
-            // Manejar números
-            else {
-                if (pantalla.getText().equals("0") && textoBoton.matches("[1-9]")) {
-                    pantalla.setText(textoBoton); // Reemplaza el cero inicial
-                } else if (pantalla.getText().equals("0") && textoBoton.equals("0")) {
-                    // Mantener un solo cero inicial si se presiona '0' de nuevo
-                }
-                else {
-                    pantalla.setText(pantalla.getText() + textoBoton); // Concatenar número
-                }
-            }
-        } else {
-            // Placeholder para operaciones. La ventana de aviso ha sido eliminada.
-            // Aquí es donde el Controller tomaría el control.
-        }
+    public void setBotonListener(Consumer<String> listener) {
+        this.listenerBotones = listener;
     }
 
+    public String getPantalla() {
+        return pantalla.getText();
+    }
+
+    public void setPantalla(String valor) {
+        pantalla.setText(valor);
+    }
 
     // --- CLASE PARA BOTONES REDONDOS UNIFORMES ---
     public class BotonRedondo extends JButton {
@@ -224,7 +207,7 @@ public class View extends JFrame {
             int stringWidth = fm.stringWidth(getText());
             int stringHeight = fm.getAscent();
 
-            // *** CORRECCIÓN APLICADA: Centrar el texto '0' horizontalmente ***
+            // Centrar el texto '0' horizontalmente
             int x = (getWidth() - stringWidth) / 2;
             // Se mantiene la alineación vertical
             int y = (getHeight() + stringHeight) / 2 - 2;
@@ -241,15 +224,8 @@ public class View extends JFrame {
             return new Dimension(anchoPastilla, diametroBase);
         }
     }
-    public String getPantalla() {
-        return pantalla.getText();
-    }
 
-    public void setPantalla(String valor) {
-        pantalla.setText(valor);
-    }
-
-
+    // Método main para lanzar la UI (puedes moverlo a otra clase si quieres)
     public static void main(String[] args) {
         SwingUtilities.invokeLater(() -> {
             View view = new View();
@@ -258,5 +234,4 @@ public class View extends JFrame {
             view.setVisible(true);
         });
     }
-
 }

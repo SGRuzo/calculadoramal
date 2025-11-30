@@ -1,102 +1,72 @@
+import javax.swing.*;
 
-/**
- * Gestiona la lógica de entrada de números y operaciones locales (C, +/-, %).
- * La lógica de las 4 operaciones básicas (+, -, x, /) se asume que se
- * delega al servidor a través del Controller.
- */
 public class Model {
 
-    // Estado de la calculadora (solo si se implementa lógica de estado)
-    private double operando1 = 0;
-    private String operacionPendiente = null;
-    private boolean inicioDeNumero = true;
+    // Guarda los números y la operación actual (opcional, se mantienen por compatibilidad)
+    private double numeroAnterior = 0;
+    private String operacionPendiente = "";
 
-    // --- Métodos de Gestión de Estado (para uso del Controller) ---
-
-    public void setInicioDeNumero(boolean inicioDeNumero) {
-        this.inicioDeNumero = inicioDeNumero;
+    // --- MÉTODO PARA GUARDAR EL NÚMERO Y LA OPERACIÓN ---
+    public void guardarOperacion(double numero, String operacion) {
+        numeroAnterior = numero;       // Guardamos el número
+        operacionPendiente = operacion; // Y la operación (+, -, ×, ÷)
     }
 
-    public boolean isInicioDeNumero() {
-        return inicioDeNumero;
+    // --- CÁLCULO EN SEGUNDO PLANO (CON HILO) usando el estado interno (firma antigua) ---
+    public void calcularEnHilo(double numeroActual, ResultadoCallback callback) {
+        calcularEnHilo(numeroAnterior, operacionPendiente, numeroActual, callback);
     }
 
-    public void setOperando1(double operando1) {
-        this.operando1 = operando1;
-    }
+    // --- NUEVO: cálculo en hilo recibiendo todos los parámetros explícitos ---
+    public void calcularEnHilo(double numeroAnteriorParam, String operacion, double numeroActual, ResultadoCallback callback) {
 
-    public double getOperando1() {
-        return operando1;
-    }
+        // Creamos un hilo para el cálculo
+        Thread hiloCalculo = new Thread(() -> {
 
-    public void setOperacionPendiente(String op) {
-        this.operacionPendiente = op;
-    }
+            double resultado = 0;
 
-    public String getOperacionPendiente() {
-        return operacionPendiente;
-    }
+            try {
+                // Simulación de operación pesada
+                Thread.sleep(200);  // solo para ver el uso de hilos (puedes quitarlo si quieres)
 
-    // --- Lógica de Entrada de Usuario (Números) ---
-
-    public String agregarNumero(String pantallaActual, String textoBoton) {
-        if (isInicioDeNumero()) {
-            // Si es el inicio de un nuevo número
-            if (textoBoton.equals(".")) {
-                setInicioDeNumero(false);
-                return "0.";
-            } else {
-                setInicioDeNumero(false);
-                return textoBoton;
-            }
-        } else {
-            // Continuación del número actual
-            if (textoBoton.equals(".")) {
-                if (!pantallaActual.contains(".")) {
-                    return pantallaActual + textoBoton;
+                switch (operacion) {
+                    case "+":
+                        resultado = numeroAnteriorParam + numeroActual;
+                        break;
+                    case "-":
+                        resultado = numeroAnteriorParam - numeroActual;
+                        break;
+                    case "×":
+                        resultado = numeroAnteriorParam * numeroActual;
+                        break;
+                    case "÷":
+                        if (numeroActual == 0) {
+                            SwingUtilities.invokeLater(() -> callback.onError("Error: División entre 0"));
+                            return;
+                        }
+                        resultado = numeroAnteriorParam / numeroActual;
+                        break;
+                    default:
+                        resultado = numeroActual; // Si no hay operación previa
                 }
-                return pantallaActual; // No añade si ya tiene punto
-            } else {
-                if (pantallaActual.equals("0")) {
-                    return textoBoton; // Reemplaza el cero inicial
-                }
-                return pantallaActual + textoBoton; // Concatenar número
+
+                double finalResultado = resultado;
+
+                // Swing SOLO puede actualizarse desde el hilo principal
+                SwingUtilities.invokeLater(() -> callback.onResultado(finalResultado));
+
+            } catch (InterruptedException e) {
+                SwingUtilities.invokeLater(() -> callback.onError("Error en hilo"));
             }
-        }
+        });
+
+        hiloCalculo.setDaemon(true);
+        hiloCalculo.start(); // Se inicia el hilo
     }
 
-
-    // --- Lógica de Operaciones Locales (No de Red) ---
-
-    public String reiniciar() {
-        setOperando1(0);
-        setOperacionPendiente(null);
-        setInicioDeNumero(true);
-        return "0";
-    }
-
-    public String cambiarSigno(String valorStr) {
-        try {
-            double valor = Double.parseDouble(valorStr);
-            double resultado = -valor;
-            // Formatear el resultado (evitar .0 si es entero)
-            if (resultado == (long) resultado) {
-                return String.format("%d", (long) resultado);
-            }
-            return String.valueOf(resultado);
-        } catch (NumberFormatException e) {
-            return "Error"; // No debería pasar si la pantalla es controlada
-        }
-    }
-
-    public String calcularPorcentaje(String valorStr) {
-        try {
-            double valor = Double.parseDouble(valorStr);
-            double resultado = valor / 100.0;
-            setInicioDeNumero(true); // El resultado se puede usar como Operando1
-            return String.valueOf(resultado);
-        } catch (NumberFormatException e) {
-            return "Error";
-        }
+    // --- CALLBACK PARA DEVOLVER EL RESULTADO ---
+    public interface ResultadoCallback {
+        void onResultado(double resultado);
+        void onError(String mensajeError);
     }
 }

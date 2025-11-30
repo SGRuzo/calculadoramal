@@ -1,126 +1,227 @@
-import javax.swing.*;
-import java.awt.*;
-import java.awt.event.ActionEvent;
-import java.awt.event.ActionListener;
+import java.text.DecimalFormat;
 
 public class Controler {
 
-    private View view;
-    private Model model;
+    private View vista;
+    private Model modelo;
 
-    public Controler(View view, Model model) {
-        this.view = view;
-        this.model = model;
-        inicializarBotones();
+    // Número actual en pantalla
+    private double numeroEnPantalla = 0;
+
+    // Para limpiar la pantalla en la siguiente entrada
+    private boolean limpiarPantalla = false;
+
+    // Para manejar repetición de "="
+    private String ultimaOperacionRepeat = "";
+    private double ultimoOperandoRepeat = 0;
+
+    // Flag de error
+    private boolean estadoError = false;
+
+    // Para almacenar la operación pendiente actual
+    private String operacionPendiente = "";
+
+    public Controler(View vista, Model modelo) {
+        this.vista = vista;
+        this.modelo = modelo;
+        asignarEventos();
     }
 
-    /**
-     * Asocia los botones de la vista con las funciones del modelo
-     */
-    private void inicializarBotones() {
-        agregarListenersRecursivo(view.getContentPane());
+    private void asignarEventos() {
+        vista.setBotonListener(this::gestionarBoton);
     }
 
-    private void agregarListenersRecursivo(Container contenedor) {
-        for (Component comp : contenedor.getComponents()) {
-            if (comp instanceof JButton boton) {
-                boton.addActionListener(e -> manejarBoton(boton.getText()));
-            } else if (comp instanceof Container cont) {
-                agregarListenersRecursivo(cont); // Llama recursivamente a los hijos
+    private void gestionarBoton(String texto) {
+        // Si estamos en estado de error, solo números, C o +/- reinician
+        if (estadoError) {
+            if ("C".equals(texto)) {
+                resetTotal();
+                vista.setPantalla("0");
+                return;
+            } else if (texto.matches("[0-9.]") || "+/-".equals(texto)) {
+                resetTotal();
+            } else {
+                return; // Ignorar otras pulsaciones
             }
         }
-    }
 
-    /**
-     * Procesa cada botón pulsado
-     */
-    private void manejarBoton(String textoBoton) {
-        String pantallaActual = view.getPantalla();
+        // Números y punto
+        if (texto.matches("[0-9.]")) {
+            escribirNumero(texto);
+            return;
+        }
 
-        switch (textoBoton) {
+        switch (texto) {
             case "C":
-                view.setPantalla(model.reiniciar());
+                resetTotal();
+                vista.setPantalla("0");
+                break;
+            case "+": case "-": case "×": case "÷":
+                manejarOperacion(texto);
+                break;
+            case "=":
+                manejarIgual();
                 break;
             case "+/-":
-                view.setPantalla(model.cambiarSigno(pantallaActual));
+                toggleSign();
                 break;
             case "%":
-                view.setPantalla(model.calcularPorcentaje(pantallaActual));
-                break;
-
-            case "+":
-            case "-":
-            case "×":
-            case "÷":
-                // 1. Si hay operación pendiente, ejecuta el cálculo anterior primero
-                if (model.getOperacionPendiente() != null) {
-                    // La lógica completa aquí llamaría a calcularResultadoRed()
-                    // Si se está en modo simple (operaciones encadenadas), esto es necesario.
-                }
-                // 2. Guarda el operando actual y la nueva operación
-                try {
-                    model.setOperando1(Double.parseDouble(pantallaActual));
-                    model.setOperacionPendiente(textoBoton);
-                    model.setInicioDeNumero(true); // Prepara para la entrada del segundo operando
-                } catch (NumberFormatException e) {
-                    view.setPantalla("Error");
-                }
-                break;
-
-            case "=":
-                if (model.getOperacionPendiente() != null) {
-                    calcularResultadoRed(pantallaActual);
-                }
-                break;
-
-            default: // Números y '.'
-                view.setPantalla(model.agregarNumero(pantallaActual, textoBoton));
+                manejarPorcentaje();
                 break;
         }
     }
 
-    /**
-     * Envía la solicitud al servidor y procesa la respuesta.
-     * @param operando2Str El segundo operando introducido por el usuario.
-     */
-    private void calcularResultadoRed(String operando2Str) {
+    private void resetTotal() {
+        numeroEnPantalla = 0;
+        limpiarPantalla = false;
+        ultimaOperacionRepeat = "";
+        ultimoOperandoRepeat = 0;
+        estadoError = false;
+        operacionPendiente = "";
+        modelo.guardarOperacion(0, "");
+    }
+
+    private void escribirNumero(String digito) {
+        if (limpiarPantalla) {
+            vista.setPantalla(digito.equals(".") ? "0." : digito);
+            limpiarPantalla = false;
+            return;
+        }
+
+        String textoActual = vista.getPantalla();
+        if (textoActual.equals("0") && !digito.equals(".")) {
+            vista.setPantalla(digito);
+        } else if (digito.equals(".") && textoActual.contains(".")) {
+            return; // no permitir dos puntos
+        } else {
+            vista.setPantalla(textoActual + digito);
+        }
+    }
+
+    private void manejarOperacion(String nuevaOperacion) {
+        double actual;
         try {
-            double operando2 = Double.parseDouble(operando2Str);
-            String operacion = model.getOperacionPendiente();
-
-            // Mapear símbolo a la clave del protocolo
-            String opProtocolo = switch (operacion) {
-                case "+" -> "SUMA";
-                case "-" -> "RESTA";
-                case "×" -> "MULTIPLICA";
-                case "÷" -> "DIVIDE";
-                default -> "ERROR";
-            };
-
-            // Formato de protocolo: CALC:OP:OP_KEY:OP1:OP2
-            String solicitud = String.format("CALC:OP:%s:%s:%s", opProtocolo, model.getOperando1(), operando2);
-
-            // --- CÓDIGO DE RED (ASUMIMOS MÉTODO en ClientConnection) ---
-            // String respuesta = clientConnection.enviarSolicitud(solicitud);
-            // procesarRespuestaServidor(respuesta);
-            // --- FIN CÓDIGO DE RED ---
-
-            // Placeholder temporal SIN RED (para que compile)
-            view.setPantalla("Esperando Servidor...");
-
-            // Resetear estado después del cálculo
-            model.setOperacionPendiente(null);
-            model.setInicioDeNumero(true);
-
+            actual = Double.parseDouble(vista.getPantalla());
         } catch (NumberFormatException e) {
-            view.setPantalla("Error de Formato");
-            model.reiniciar();
-        } catch (Exception e) {
-            view.setPantalla("Error de Conexión");
-            // clientConnection.cerrar();
+            return;
+        }
+
+        if (!operacionPendiente.isEmpty() && !limpiarPantalla) {
+            // Encadenar operaciones: calcular primero
+            double anterior = numeroEnPantalla;
+            modelo.calcularEnHilo(anterior, operacionPendiente, actual, new Model.ResultadoCallback() {
+                @Override
+                public void onResultado(double resultado) {
+                    numeroEnPantalla = resultado;
+                    vista.setPantalla(formatear(resultado));
+                    operacionPendiente = nuevaOperacion;
+                    limpiarPantalla = true;
+                }
+
+                @Override
+                public void onError(String mensajeError) {
+                    estadoError = true;
+                    vista.setPantalla(mensajeError);
+                    operacionPendiente = "";
+                }
+            });
+        } else {
+            numeroEnPantalla = actual;
+            operacionPendiente = nuevaOperacion;
+            limpiarPantalla = true;
+        }
+
+        ultimaOperacionRepeat = "";
+        ultimoOperandoRepeat = 0;
+    }
+
+    private void manejarIgual() {
+        double actual;
+        try {
+            actual = Double.parseDouble(vista.getPantalla());
+        } catch (NumberFormatException e) {
+            return;
+        }
+
+        // Si hay operación pendiente, calculamos
+        if (!operacionPendiente.isEmpty()) {
+            double anterior = numeroEnPantalla;
+            double operando = actual;
+            String op = operacionPendiente;
+
+            modelo.calcularEnHilo(anterior, op, operando, new Model.ResultadoCallback() {
+                @Override
+                public void onResultado(double resultado) {
+                    numeroEnPantalla = resultado;
+                    vista.setPantalla(formatear(resultado));
+                    ultimaOperacionRepeat = op;
+                    ultimoOperandoRepeat = operando;
+                    limpiarPantalla = true;
+                    operacionPendiente = ""; // operación ejecutada
+                }
+
+                @Override
+                public void onError(String mensajeError) {
+                    estadoError = true;
+                    vista.setPantalla(mensajeError);
+                    operacionPendiente = "";
+                }
+            });
+        } else if (!ultimaOperacionRepeat.isEmpty()) {
+            // Repetición de "="
+            double anterior = numeroEnPantalla;
+            double operando = ultimoOperandoRepeat;
+            String op = ultimaOperacionRepeat;
+
+            modelo.calcularEnHilo(anterior, op, operando, new Model.ResultadoCallback() {
+                @Override
+                public void onResultado(double resultado) {
+                    numeroEnPantalla = resultado;
+                    vista.setPantalla(formatear(resultado));
+                    limpiarPantalla = true;
+                }
+
+                @Override
+                public void onError(String mensajeError) {
+                    estadoError = true;
+                    vista.setPantalla(mensajeError);
+                }
+            });
         }
     }
 
-    // El método procesarRespuestaServidor(String respuesta) iría aquí para actualizar la View
-    // y el estado del Model (model.setOperando1(nuevoResultado))
+    private void toggleSign() {
+        String texto = vista.getPantalla();
+        if (texto.equals("0") || texto.startsWith("Error")) return;
+
+        if (texto.startsWith("-")) {
+            vista.setPantalla(texto.substring(1));
+        } else {
+            vista.setPantalla("-" + texto);
+        }
+    }
+
+    private void manejarPorcentaje() {
+        double actual;
+        try {
+            actual = Double.parseDouble(vista.getPantalla());
+        } catch (NumberFormatException e) {
+            return;
+        }
+
+        if (!operacionPendiente.isEmpty()) {
+            // iPhone style: porcentaje respecto al numeroEnPantalla
+            actual = numeroEnPantalla * (actual / 100);
+        } else {
+            // simple porcentaje
+            actual = actual / 100;
+        }
+
+        vista.setPantalla(formatear(actual));
+    }
+
+    private String formatear(double numero) {
+        DecimalFormat df = new DecimalFormat("#.##########");
+        return df.format(numero);
+    }
 }
